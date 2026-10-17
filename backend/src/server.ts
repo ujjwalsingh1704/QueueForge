@@ -1,4 +1,6 @@
 import express from "express";
+import path from "node:path";
+import { existsSync } from "node:fs";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { createBullBoard } from "@bull-board/api";
@@ -36,7 +38,19 @@ async function main() {
   app.use("/api/emails", emailsRouter);
   app.use("/api/slack", slackRouter);
 
-  app.listen(config.port, () => console.log(`[api] http://localhost:${config.port}  (queues: /admin/queues)`));
+  // Production Docker image includes the built dashboard; local development keeps using Vite.
+  const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+  if (existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api/") || req.path.startsWith("/auth/") || req.path.startsWith("/admin/")) {
+        return next();
+      }
+      res.sendFile(path.join(frontendDist, "index.html"));
+    });
+  }
+
+  app.listen(config.port, "0.0.0.0", () => console.log(`[api] listening on ${config.port}  (queues: /admin/queues)`));
 }
 
 main().catch((e) => {

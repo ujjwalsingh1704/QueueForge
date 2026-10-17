@@ -26,7 +26,12 @@ authRouter.get("/google/callback", async (req, res) => {
        RETURNING id`,
       [p.sub, p.email, p.name, p.picture]
     );
-    res.cookie("token", signSession(rows[0].id), { httpOnly: true, sameSite: "lax", maxAge: 7 * 864e5 });
+    res.cookie("token", signSession(rows[0].id), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: config.isProduction,
+      maxAge: 7 * 864e5,
+    });
     res.redirect(`${config.frontendUrl}/dashboard`);
   } catch (e) {
     console.error("[auth]", e);

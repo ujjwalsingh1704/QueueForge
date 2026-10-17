@@ -25,6 +25,29 @@ npm run dev                              # terminal 3  -> http://localhost:5173
 - **Runtime settings:** `.env.example` documents concurrency, global minimum send spacing, per-sender hourly limit and Ethereal sender count. Use a long random `JWT_SECRET` outside local development.
 - **Live queue dashboard:** http://localhost:4000/admin/queues (Bull Board).
 
+## Deploy it
+
+The root `Dockerfile` builds the dashboard and API together. The production Compose file runs the web service, a separate BullMQ worker, Postgres, Redis, Elasticsearch, and Caddy for HTTPS. **Oracle Cloud Always Free** can run the stack on one ARM64 Ubuntu VM: its free allocation includes up to 2 OCPUs, 12 GB RAM, 200 GB combined boot/block storage, and 10 TB monthly outbound transfer in the tenancy's home region. Oracle requires account verification (usually including a card), but says it does not charge for Always Free resources unless you upgrade; free VM capacity may not be available immediately. Use only resources labeled Always Free. See [Oracle's current Always Free limits](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) and [Free Tier account terms](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm).
+
+1. Create or sign in to an Oracle Cloud Free Tier account. Select the home region closest to you. Create one `VM.Standard.A1.Flex` instance using **2 OCPUs and 12 GB RAM**, an **Ubuntu 24.04 ARM64** image, the default 50 GB boot volume, and an SSH public key. Confirm the resources are Always Free eligible; do not upgrade the account or create paid resources. If Oracle reports no host capacity, wait and retry later.
+2. In the VCN's public subnet security list, allow inbound TCP ports `22`, `80`, and `443` (limit SSH to your IP if possible). Ensure the instance has a public IP, an internet gateway, and a default route. Do not expose ports `4000`, `5432`, `6379`, or `9200` publicly.
+3. Point a domain's DNS `A` record to the VM's public IPv4. A free DNS subdomain can be used for a demo if you do not own a domain. Wait until DNS resolves. Caddy will automatically request and renew HTTPS; Google and Slack OAuth require the hosted HTTPS callback URLs.
+4. SSH into the VM, install Docker Engine and the Compose plugin using [Docker's official Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/), then set `vm.max_map_count=262144` on the host for Elasticsearch.
+5. Give the VM read-only access to the private GitHub repo (for example, create an SSH deploy key on the VM and add only its public key under repository Deploy Keys), then clone `ujjwalsingh1704/OutBox` into `/opt/outbox`.
+6. In `/opt/outbox`, copy `.env.production.example` to `.env.production` and edit it. Set `DOMAIN` to your DNS name, make `JWT_SECRET` and `POSTGRES_PASSWORD` strong random values (use URL-safe letters and numbers for the database password), and fill the Google and Slack client credentials. The real `.env.production` is gitignored and excluded from Docker builds.
+7. Add `https://<your-domain>/auth/google/callback` to the Google OAuth client's authorized redirect URIs. Add `https://<your-domain>/api/slack/callback` to the Slack app's redirect URLs. Keep the existing Slack incoming-webhook scope. Save the updated provider settings.
+8. Start the app from `/opt/outbox`:
+
+   ```bash
+   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+   docker compose --env-file .env.production -f docker-compose.prod.yml ps
+   docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 web worker caddy
+   ```
+
+   Visit `https://<your-domain>` and check `/health`; the worker must also be running. Use `/admin/queues` to inspect BullMQ jobs.
+
+Oracle blocks outbound SMTP port 25 by default; this app's Ethereal test accounts use port 587. That should avoid the documented port-25 restriction, but verify sending after deployment. Ethereal provides test previews; it is not real customer email delivery. Slack alerts work after connecting Slack from the hosted dashboard. Keep `.env.production` backed up securely; separately back up the Postgres and Docker volumes. Oracle Free Tier is suitable for a demo, not a production availability guarantee.
+
 ## Architecture
 
 **Scheduling.** `POST /api/emails/schedule` inserts one `emails` row per recipient in a single transaction (Postgres is the source of truth), then adds BullMQ jobs with `delay = scheduled_at - now`. Email *i* of a batch is scheduled at `start + i × delay`. Senders are assigned round-robin. No cron anywhere.

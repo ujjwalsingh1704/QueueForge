@@ -3,6 +3,7 @@ import "dotenv/config";
 const num = (v: string | undefined, d: number) => (v ? Number(v) : d);
 
 export const config = {
+  isProduction: process.env.NODE_ENV === "production",
   port: num(process.env.PORT, 4000),
   frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
   backendUrl: process.env.BACKEND_URL ?? "http://localhost:4000",
@@ -23,3 +24,7 @@ export const config = {
   maxPerHour: num(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER, 200),
   senderCount: num(process.env.SENDER_COUNT, 3),
 };
+
+if (config.isProduction && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "dev-secret")) {
+  throw new Error("JWT_SECRET must be set to a strong secret in production");
+}
