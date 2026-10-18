@@ -14,13 +14,18 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: outbox-db
+          property: connectionString
       - key: REDIS_URL
-        sync: false
+        fromService:
+          name: outbox-redis
+          type: keyvalue
+          property: connectionString
       - key: GOOGLE_CLIENT_ID
-        sync: false
+        value: ""
       - key: GOOGLE_CLIENT_SECRET
-        sync: false
+        value: ""
       - key: SLACK_CLIENT_ID
         value: ""
       - key: SLACK_CLIENT_SECRET
@@ -29,3 +34,15 @@ services:
         value: "1"
       - key: MIN_DELAY_BETWEEN_EMAILS_MS
         value: "2000"
+  - type: keyvalue
+    name: outbox-redis
+    plan: free
+    region: singapore
+    ipAllowList: []
+
+databases:
+  - name: outbox-db
+    plan: free
+    region: singapore
+    databaseName: outbox
+    user: outbox
