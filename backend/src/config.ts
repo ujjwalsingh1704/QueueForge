@@ -5,8 +5,8 @@ const num = (v: string | undefined, d: number) => (v ? Number(v) : d);
 export const config = {
   isProduction: process.env.NODE_ENV === "production",
   port: num(process.env.PORT, 4000),
-  frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
-  backendUrl: process.env.BACKEND_URL ?? "http://localhost:4000",
+  frontendUrl: process.env.FRONTEND_URL ?? process.env.RENDER_EXTERNAL_URL ?? "http://localhost:5173",
+  backendUrl: process.env.BACKEND_URL ?? process.env.RENDER_EXTERNAL_URL ?? "http://localhost:4000",
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret",
   databaseUrl: process.env.DATABASE_URL ?? "postgres://outbox:outbox@localhost:5433/outbox",
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",

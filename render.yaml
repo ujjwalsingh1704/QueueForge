@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: outbox-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: npm run start:all
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SLACK_CLIENT_ID
+        value: ""
+      - key: SLACK_CLIENT_SECRET
+        value: ""
+      - key: WORKER_CONCURRENCY
+        value: "1"
+      - key: MIN_DELAY_BETWEEN_EMAILS_MS
+        value: "2000"

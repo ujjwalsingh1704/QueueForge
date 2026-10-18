@@ -151,6 +151,12 @@ The compose screen can set an hourly limit and a delay for an individual batch. 
 
 The root `Dockerfile` builds the dashboard and API into one image. `docker-compose.prod.yml` runs that image as an API and a separate worker, plus PostgreSQL, Redis, Elasticsearch, and Caddy for HTTPS. It is designed for a Linux VM with a public IP and a DNS name.
 
+### Free hosted demo (Render + Neon + Upstash)
+
+The checked-in [`render.yaml`](./render.yaml) deploys the API, dashboard, and queue worker together as one Render web service. Before creating the Render Blueprint, create a free PostgreSQL database on [Neon](https://neon.com/) and a Redis database on [Upstash](https://upstash.com/). Enter their connection strings when Render prompts for `DATABASE_URL` and `REDIS_URL`. Use Neon's pooled PostgreSQL URL with SSL enabled and Upstash's `rediss://` Redis URL (not the REST URL). Render also prompts for Google OAuth credentials; after the first deploy, add `https://<your-render-service>.onrender.com/auth/google/callback` as an authorized redirect URI in Google Cloud. Slack can be connected later by adding its client ID and secret in Render's environment settings and registering `https://<your-render-service>.onrender.com/api/slack/callback` in the Slack app.
+
+This is suitable for a portfolio demo, with free-tier limits: Render sleeps after 15 minutes without traffic and may take about a minute to wake; Upstash Free includes 500,000 Redis commands monthly; Neon Free currently provides 1 GB storage per project. Render blocks outbound SMTP on ports 25, 465, and 587, so the current Ethereal SMTP sender will not deliver from Render. The app can be opened and explored, but sending needs an email provider/API integration or a host that allows SMTP. Elasticsearch is optional at startup, but search requires a reachable Elasticsearch service.
+
 For a free Oracle Cloud deployment, use only resources labeled **Always Free eligible**. Oracle currently lists an Always Free Ampere allocation equivalent to **2 OCPUs and 12 GB RAM**, 200 GB of combined block storage, and 10 TB/month of outbound data in the tenancy's home region. Capacity can be limited, and account verification may be required. [Check Oracle's current Always Free limits](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) and [Free Tier terms](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm).
 
 ### Production deployment outline

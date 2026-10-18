@@ -8,6 +8,7 @@
     "build": "tsc",
     "start:api": "node dist/server.js",
     "start:worker": "node dist/worker.js",
+    "start:all": "node dist/combined.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
