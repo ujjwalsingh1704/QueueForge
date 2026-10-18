@@ -1,42 +1,170 @@
-# Outbox – email scheduler service + dashboard
+# Outbox
 
-Express + TypeScript API, BullMQ/Redis delayed jobs, Postgres, Elasticsearch search, Ethereal SMTP, Slack alerts, and a React + Tailwind dashboard.
+**Schedule test emails, control sending pace, and track every message from one dashboard.**
 
-## Run it
+Outbox is a full-stack email scheduling project built to demonstrate reliable background jobs, per-sender rate limits, and Slack alerts. Compose a message, add recipients or import a CSV, send now or schedule for later, then follow each email as it moves through the queue.
+
+> **Demo status:** The app runs locally. It does not currently have a public hosting link. Outbox uses Ethereal test email accounts, so messages are for testing and preview; they are not delivered to real recipients.
+
+## What you can do
+
+- **Write and schedule email batches.** Add recipients directly or import them from a CSV or text file. Choose Send now or Send later.
+- **Control the pace.** Set the delay between emails and an hourly limit for each sender.
+- **Keep queued emails safe.** Postgres stores email records, while Redis and BullMQ hold delayed jobs so they can resume after a restart.
+- **Handle rate limits automatically.** When a sender reaches its hourly limit, Outbox defers the remaining emails to the next hour instead of dropping them.
+- **Get Slack alerts.** Connect Slack to receive one alert when a sender reaches its hourly limit.
+- **Find and inspect messages.** Search email records, see Scheduled and Sent lists, open message details, and preview test emails.
+- **Inspect the queue.** Open the live Bull Board dashboard at `/admin/queues`.
+
+## How it works
+
+1. Outbox saves each recipient's email as a row in Postgres.
+2. BullMQ adds a delayed job to Redis for each email.
+3. A separate worker sends due emails through Nodemailer and updates their status.
+4. The worker applies the hourly limit and global send spacing. If the hourly limit is reached, it delays that email until the next hour and sends a Slack alert if Slack is connected.
+5. Elasticsearch indexes email records for search. Search indexing is best-effort and does not block sending.
+
+## Technology
+
+| Part | Technology |
+|---|---|
+| Dashboard | React, TypeScript, Vite, Tailwind CSS |
+| API and authentication | Node.js, Express, TypeScript, Google OAuth |
+| Scheduling and background work | BullMQ, Redis |
+| Persistent records | PostgreSQL |
+| Search | Elasticsearch |
+| Test email | Nodemailer, Ethereal |
+| Alerts | Slack incoming webhooks |
+| Production web serving | Docker Compose, Caddy, automatic HTTPS |
+
+## Run locally
+
+### Requirements
+
+- Git
+- Node.js 22 or newer and npm
+- Docker Desktop (or Docker Engine with the Compose plugin)
+
+### 1. Get the project and start its services
+
+From a terminal:
 
 ```bash
-docker compose up -d                     # Redis (AOF on), Postgres, Elasticsearch
-
-cd backend
-Copy-Item .env.example .env              # then fill in Google + Slack credentials
-npm install
-npm run dev:api                          # terminal 1  -> http://localhost:4000
-npm run dev:worker                       # terminal 2  (BullMQ worker)
-
-cd ../frontend
-npm install
-npm run dev                              # terminal 3  -> http://localhost:5173
+git clone https://github.com/ujjwalsingh1704/OutBox.git
+cd OutBox
+docker compose up -d
 ```
 
-- **Ethereal:** nothing to configure. On first boot the API creates `SENDER_COUNT` Ethereal accounts via `nodemailer.createTestAccount()` and stores them in the `senders` table. Each sent email gets a preview link in the dashboard.
-- **Google OAuth:** create a Web OAuth client; redirect URI `http://localhost:4000/auth/google/callback`.
-- **Slack OAuth:** create a Slack app, add scope `incoming-webhook`, redirect URL `http://localhost:4000/api/slack/callback`. (Slack requires HTTPS redirect URLs for non-localhost; use ngrok if needed.)
-- **Database port:** Compose exposes Postgres on host port `5433`; the default `DATABASE_URL` and `.env.example` use that port. Change it if you map Postgres elsewhere.
-- **Runtime settings:** `.env.example` documents concurrency, global minimum send spacing, per-sender hourly limit and Ethereal sender count. Use a long random `JWT_SECRET` outside local development.
-- **Live queue dashboard:** http://localhost:4000/admin/queues (Bull Board).
+The Compose file starts PostgreSQL, Redis, and Elasticsearch. PostgreSQL is available locally on port `5433`; the other local service ports are `6379` and `9200`.
 
-## Deploy it
+### 2. Configure and start the API
 
-The root `Dockerfile` builds the dashboard and API together. The production Compose file runs the web service, a separate BullMQ worker, Postgres, Redis, Elasticsearch, and Caddy for HTTPS. **Oracle Cloud Always Free** can run the stack on one ARM64 Ubuntu VM: its free allocation includes up to 2 OCPUs, 12 GB RAM, 200 GB combined boot/block storage, and 10 TB monthly outbound transfer in the tenancy's home region. Oracle requires account verification (usually including a card), but says it does not charge for Always Free resources unless you upgrade; free VM capacity may not be available immediately. Use only resources labeled Always Free. See [Oracle's current Always Free limits](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) and [Free Tier account terms](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm).
+Create the backend environment file. In PowerShell:
 
-1. Create or sign in to an Oracle Cloud Free Tier account. Select the home region closest to you. Create one `VM.Standard.A1.Flex` instance using **2 OCPUs and 12 GB RAM**, an **Ubuntu 24.04 ARM64** image, the default 50 GB boot volume, and an SSH public key. Confirm the resources are Always Free eligible; do not upgrade the account or create paid resources. If Oracle reports no host capacity, wait and retry later.
-2. In the VCN's public subnet security list, allow inbound TCP ports `22`, `80`, and `443` (limit SSH to your IP if possible). Ensure the instance has a public IP, an internet gateway, and a default route. Do not expose ports `4000`, `5432`, `6379`, or `9200` publicly.
-3. Point a domain's DNS `A` record to the VM's public IPv4. A free DNS subdomain can be used for a demo if you do not own a domain. Wait until DNS resolves. Caddy will automatically request and renew HTTPS; Google and Slack OAuth require the hosted HTTPS callback URLs.
-4. SSH into the VM, install Docker Engine and the Compose plugin using [Docker's official Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/), then set `vm.max_map_count=262144` on the host for Elasticsearch.
-5. Give the VM read-only access to the private GitHub repo (for example, create an SSH deploy key on the VM and add only its public key under repository Deploy Keys), then clone `ujjwalsingh1704/OutBox` into `/opt/outbox`.
-6. In `/opt/outbox`, copy `.env.production.example` to `.env.production` and edit it. Set `DOMAIN` to your DNS name, make `JWT_SECRET` and `POSTGRES_PASSWORD` strong random values (use URL-safe letters and numbers for the database password), and fill the Google and Slack client credentials. The real `.env.production` is gitignored and excluded from Docker builds.
-7. Add `https://<your-domain>/auth/google/callback` to the Google OAuth client's authorized redirect URIs. Add `https://<your-domain>/api/slack/callback` to the Slack app's redirect URLs. Keep the existing Slack incoming-webhook scope. Save the updated provider settings.
-8. Start the app from `/opt/outbox`:
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
+On macOS or Linux:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Open `backend/.env` and set up Google OAuth as described below. Then start the API:
+
+```bash
+cd backend
+npm install
+npm run dev:api
+```
+
+The API runs at `http://localhost:4000`.
+
+### 3. Start the worker
+
+Open a second terminal at the project root and run:
+
+```bash
+cd backend
+npm run dev:worker
+```
+
+The worker processes emails when they are due.
+
+### 4. Start the dashboard
+
+Open a third terminal at the project root and run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`.
+
+### Connect Google sign-in
+
+Create a Google OAuth **Web application** client and add this authorized redirect URI:
+
+```text
+http://localhost:4000/auth/google/callback
+```
+
+Put the client ID and secret in `backend/.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. The login screen needs Google OAuth to sign in.
+
+### Connect Slack (optional)
+
+Create a Slack app with the `incoming-webhook` OAuth scope and add this redirect URL:
+
+```text
+http://localhost:4000/api/slack/callback
+```
+
+Set `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` in `backend/.env`. Slack requires HTTPS redirect URLs for hosted deployments.
+
+### Email previews
+
+Outbox creates Ethereal test sender accounts automatically on first API startup. No SMTP account setup is needed locally. After an email is sent, use its preview link to view the message in Ethereal. Ethereal is a testing service, not a real email delivery provider.
+
+### Useful local URLs
+
+- Dashboard: `http://localhost:5173`
+- API health: `http://localhost:4000/health`
+- Queue dashboard: `http://localhost:4000/admin/queues`
+
+## Configuration
+
+`backend/.env.example` lists the available settings. The most commonly changed ones are:
+
+| Setting | Default | What it controls |
+|---|---:|---|
+| `WORKER_CONCURRENCY` | `5` | Number of jobs the worker can process concurrently |
+| `MIN_DELAY_BETWEEN_EMAILS_MS` | `2000` | Minimum global spacing between sends, in milliseconds |
+| `MAX_EMAILS_PER_HOUR_PER_SENDER` | `200` | Default hourly cap for each sender |
+| `SENDER_COUNT` | `3` | Number of Ethereal test senders created on first startup |
+
+The compose screen can set an hourly limit and a delay for an individual batch. Never commit `.env` files or production secrets. Use a long, random `JWT_SECRET` for production; the local example is for development only.
+
+## Deploy with Docker
+
+The root `Dockerfile` builds the dashboard and API into one image. `docker-compose.prod.yml` runs that image as an API and a separate worker, plus PostgreSQL, Redis, Elasticsearch, and Caddy for HTTPS. It is designed for a Linux VM with a public IP and a DNS name.
+
+For a free Oracle Cloud deployment, use only resources labeled **Always Free eligible**. Oracle currently lists an Always Free Ampere allocation equivalent to **2 OCPUs and 12 GB RAM**, 200 GB of combined block storage, and 10 TB/month of outbound data in the tenancy's home region. Capacity can be limited, and account verification may be required. [Check Oracle's current Always Free limits](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) and [Free Tier terms](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm).
+
+### Production deployment outline
+
+1. Create an Ubuntu 24.04 ARM64 VM in your Oracle home region. Confirm the VM and storage are marked Always Free eligible; do not upgrade the account or create paid resources.
+2. Allow inbound TCP ports `22`, `80`, and `443` in the VM firewall/security list. Keep ports `4000`, `5432`, `6379`, and `9200` private.
+3. Point a DNS `A` record (a free subdomain works for a demo) to the VM's public IPv4 address. Caddy will request and renew HTTPS certificates after DNS resolves.
+4. Install Docker Engine and the Docker Compose plugin using [Docker's Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/). Set `vm.max_map_count=262144` on the VM for Elasticsearch.
+5. Clone this private GitHub repository onto the VM using a read-only deploy key.
+6. Copy `.env.production.example` to `.env.production`. Set `DOMAIN`, a strong random `JWT_SECRET`, a strong `POSTGRES_PASSWORD`, and your Google/Slack OAuth credentials.
+7. Add the hosted callbacks to your OAuth apps:
+   - Google: `https://<your-domain>/auth/google/callback`
+   - Slack: `https://<your-domain>/api/slack/callback`
+8. Start the stack from the project directory:
 
    ```bash
    docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
@@ -44,46 +172,15 @@ The root `Dockerfile` builds the dashboard and API together. The production Comp
    docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 web worker caddy
    ```
 
-   Visit `https://<your-domain>` and check `/health`; the worker must also be running. Use `/admin/queues` to inspect BullMQ jobs.
+   Visit `https://<your-domain>` and check `https://<your-domain>/health`. Confirm both the `web` and `worker` services are running.
 
-Oracle blocks outbound SMTP port 25 by default; this app's Ethereal test accounts use port 587. That should avoid the documented port-25 restriction, but verify sending after deployment. Ethereal provides test previews; it is not real customer email delivery. Slack alerts work after connecting Slack from the hosted dashboard. Keep `.env.production` backed up securely; separately back up the Postgres and Docker volumes. Oracle Free Tier is suitable for a demo, not a production availability guarantee.
+Ethereal uses SMTP on port `587`; verify outbound SMTP access from your host before relying on email sending. Slack alerts begin working after connecting Slack in the hosted dashboard. Back up `.env.production` securely, along with the PostgreSQL and Docker volumes. Free-tier hosting is suitable for a demo and does not guarantee production availability.
 
-## Architecture
+## Design notes and trade-offs
 
-**Scheduling.** `POST /api/emails/schedule` inserts one `emails` row per recipient in a single transaction (Postgres is the source of truth), then adds BullMQ jobs with `delay = scheduled_at - now`. Email *i* of a batch is scheduled at `start + i × delay`. Senders are assigned round-robin. No cron anywhere.
-
-**Persistence / restarts.** Delayed jobs live in Redis (AOF enabled), not in process memory, so stopping the API/worker loses nothing; a restarted worker picks jobs up at their due time. On API boot, `reconcile()` re-enqueues any `scheduled` DB row missing from the queue (Redis wiped, or crash between COMMIT and `queue.add`). Job id is `email-<rowId>`, so re-adding is a no-op.
-
-**Idempotency.** (1) Deterministic jobId. (2) Before sending, the worker atomically runs `UPDATE … SET status='processing' WHERE id=$1 AND status='scheduled'`; only the worker that wins the row sends. Jobs have `attempts: 1`.
-
-**Concurrency.** `WORKER_CONCURRENCY` (default 5). Safe because all shared state is either an atomic Redis Lua script or an atomic SQL claim.
-
-**Delay between sends.** BullMQ limiter `{ max: 1, duration: MIN_DELAY_BETWEEN_EMAILS_MS }`; default **2000 ms** between sends (global across workers on the queue). The per-batch "delay between emails" in the compose form additionally spaces the scheduled times.
-
-**Hourly rate limit.** Per sender, key `rl:sender:<id>:<hourWindow>`, incremented by a Lua script that only increments if below the limit (atomic across workers and instances). Limit = the compose form's "Hourly limit" or `MAX_EMAILS_PER_HOUR_PER_SENDER` (default **200**). When exceeded, the job is **moved to delayed** at the next hour boundary (+ a small id-based offset to keep rough FIFO order) via `job.moveToDelayed` + `DelayedError`. Jobs are never failed or dropped.
-
-**Slack.** "Connect Slack" runs the real OAuth v2 flow and stores the incoming-webhook URL per user. The first time a sender hits its limit in a window, a message is posted to that webhook (deduplicated with a `SET NX` key per sender/window). Not connected → skipped silently; connect later → works immediately, no redeploy.
-
-**Search.** Rows are indexed into Elasticsearch on create and on status change (`GET /api/emails/search?q=`). Indexing is best effort and never blocks sending.
-
-**1000+ emails at once.** All are queued as delayed jobs; the limiter paces sends, each sender sends at most its hourly limit, and overflow rolls into following hours automatically.
-
-## Features
-
-| Backend | Frontend |
-|---|---|
-| Schedule API, Postgres persistence | Google login page, sidebar with name/email/avatar + logout |
-| BullMQ delayed jobs, no cron | Scheduled / Sent mailbox lists (with counts), email detail view, loading + empty states |
-| Restart-safe + reconcile | Compose page: rich-text body, recipient chips, CSV/text lead upload (count shown), Send / Send later, delay, hourly limit |
-| Idempotent sending | Slack connect/disconnect |
-| Configurable concurrency, min delay, hourly limits (Redis) | Search, toasts, reusable components, typed API |
-| Multiple Ethereal senders | |
-| Slack OAuth + live notification | |
-| Elasticsearch search, Bull Board | |
-
-## Assumptions and trade-offs
-
-- Delivery is **at-most-once**: if a worker crashes mid-send, that row stays `processing` and is not auto-retried (avoids duplicates). A production system would add a lease timeout.
-- The min-delay limiter is queue-global, not per sender.
-- UI follows the Figma screenshots (login, mailbox, detail, compose, send-later popover) but was built from a low-resolution export, so colors, fonts and spacing are close, not exact. Attachments and email/password login from the Figma are not implemented (not in the requirements).
-- Rate-limit order is "rough FIFO" within the next window.
+- **Rate limits are shared.** Redis atomically tracks each sender's hourly usage across workers. A Redis Lua script prevents two workers from consuming the same remaining slot.
+- **Queue recovery is automatic.** On API startup, Outbox checks for scheduled database rows that are missing from Redis and re-enqueues them.
+- **Duplicate sends are guarded.** Before sending, a worker atomically claims the email row. The delivery model is at-most-once: if a worker crashes after claiming an email, that row can remain `processing` and is not automatically retried.
+- **Slack alerts are deduplicated.** Outbox sends at most one rate-limit alert per sender and hourly window. If Slack is not connected, the email is still deferred and sending can continue later.
+- **The global send delay applies across the queue.** It is not a separate delay for each sender.
+- **The UI follows the supplied design references.** Attachments and email/password sign-in are not implemented.
