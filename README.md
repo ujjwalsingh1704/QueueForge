@@ -18,11 +18,30 @@ Outbox is a full-stack email scheduling project built to demonstrate reliable ba
 
 ## How it works
 
-1. Outbox saves each recipient's email as a row in Postgres.
-2. BullMQ adds a delayed job to Redis for each email.
-3. A separate worker sends due emails through Nodemailer and updates their status.
-4. The worker applies the hourly limit and global send spacing. If the hourly limit is reached, it delays that email until the next hour and sends a Slack alert if Slack is connected.
-5. Elasticsearch indexes email records for search. Search indexing is best-effort and does not block sending.
+```mermaid
+flowchart TD
+    A["Compose or schedule a batch<br/>Dashboard"] --> B["API validates recipients<br/>and saves email records"]
+    B --> C[("PostgreSQL<br/>Email status and schedule")]
+    B --> D["Add one job per email<br/>BullMQ queue in Redis"]
+    D --> E["Worker picks up due job"]
+    E --> F{"Hourly sender limit reached?"}
+    F -->|No| G["Send email<br/>Nodemailer + Ethereal SMTP"]
+    G --> H["Save sent or failed status<br/>in PostgreSQL"]
+    H --> I["Index for search<br/>Elasticsearch"]
+    H --> J["Show status in dashboard"]
+    F -->|Yes| K["Delay email until<br/>the next hour"]
+    K --> D
+    K -. if Slack is connected .-> L["Send one rate-limit alert<br/>to Slack"]
+
+    classDef app fill:#e8f1ff,stroke:#4677b8,color:#172b4d
+    classDef store fill:#edf8ee,stroke:#4c9560,color:#183b22
+    classDef decision fill:#fff4d6,stroke:#bd8b18,color:#4b3600
+    class A,B,E,G,J app
+    class C,D,H,I,K,L store
+    class F decision
+```
+
+The worker spaces sends apart and enforces the hourly limit. When a sender reaches the limit, the email stays queued for the next hour; a Slack alert is sent if Slack is connected. Search indexing is best-effort, so a search outage does not stop sending.
 
 ## Technology
 
